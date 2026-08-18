@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0-only
 
 menuconfig RTW88
-	tristate "Realtek rtw88 support"
+	tristate "lwfinger's Realtek rtw88 backport support"
 	depends on MAC80211
 	help
 	  This enables the Realtek rtw88 wireless driver family.
