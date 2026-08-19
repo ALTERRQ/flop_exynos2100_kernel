@@ -21,6 +21,7 @@
 #include <linux/slab.h>
 #include <linux/pagemap.h>
 #include <linux/writeback.h>
+#include <linux/memblock.h>
 #include <linux/init.h>
 #include <linux/backing-dev.h>
 #include <linux/task_io_accounting_ops.h>
@@ -2196,9 +2197,27 @@ static int page_writeback_cpu_online(unsigned int cpu)
  * But we might still want to scale the dirty_ratio by how
  * much memory the box has..
  */
+static void __init dirty_writeback_ratio_init(void)
+{
+	unsigned long total_ram_mb = memblock_phys_mem_size() >> 20;
+
+	if (total_ram_mb < 7000) {
+		vm_dirty_ratio = 15;
+		dirty_background_ratio = 5;
+	} else if (total_ram_mb < 10000) {
+		vm_dirty_ratio = 15;
+		dirty_background_ratio = 7;
+	} else {
+		vm_dirty_ratio = 20;
+		dirty_background_ratio = 10;
+	}
+}
+
 void __init page_writeback_init(void)
 {
 	BUG_ON(wb_domain_init(&global_wb_domain, GFP_KERNEL));
+
+	dirty_writeback_ratio_init();
 
 	cpuhp_setup_state(CPUHP_AP_ONLINE_DYN, "mm/writeback:online",
 			  page_writeback_cpu_online, NULL);

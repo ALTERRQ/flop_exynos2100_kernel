@@ -8185,19 +8185,12 @@ static void __init watermark_scale_factor_init(void)
 {
 	unsigned long total_ram_mb = memblock_phys_mem_size() >> 20;
 
-	/*
-	 * Use physical RAM rather than totalram_pages(), which is already
-	 * reduced by reserved-memory carveouts on these Exynos devices.
-	 *
-	 * Keep the 6 GB class on the safest watermark spacing and scale up
-	 * gradually for the larger 8/12/16 GB variants in this family.
-	 */
 	if (total_ram_mb < 7000)
-		watermark_scale_factor = 20;
+		watermark_scale_factor = 100;
 	else if (total_ram_mb < 10000)
-		watermark_scale_factor = 20;
+		watermark_scale_factor = 80;
 	else
-		watermark_scale_factor = 25;
+		watermark_scale_factor = 50;
 }
 
 /**
