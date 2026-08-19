@@ -179,7 +179,7 @@ version_string="${FK_VER}-${git_hash}"
 
 OUT_DIR="$KERNEL_DIR/build/nh/out"
 STAGE_DIR="$OUT_DIR/floppy2100_nethunter-extras"
-MODULE_DEST_DIR="$STAGE_DIR/system/lib/modules"
+MODULE_DEST_DIR="$STAGE_DIR/modules"
 FIRMWARE_DEST_DIR="$STAGE_DIR/system/vendor/firmware"
 ZIP_PATH="$OUT_DIR/floppy2100_nethunter-extras-${version_string}.zip"
 TMP_EXCLUDED_DIR="$(mktemp -d)"
@@ -258,9 +258,11 @@ id=floppy2100_nh_extras
 name=Floppy2100 Nethunter Extras
 version=${version_string}
 versionCode=${version_code}
-author=Flopster101
-description=Floppy2100 NetHunter extras package with external Wi-Fi kernel modules and optional firmware payload
+author=Flopster101 & ALTERRQ
+description=Extra drivers and firmware for WI-FI chipsets
 EOF
+
+cp -f "$KERNEL_DIR/build/nh/scripts/*.sh" "$STAGE_DIR"
 
 rm -f "$ZIP_PATH"
 (
