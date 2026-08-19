@@ -188,7 +188,7 @@ int vm_swappiness = 100;
  */
 unsigned long vm_total_pages;
 
-#define DEF_KSWAPD_THREADS_PER_NODE 2
+#define DEF_KSWAPD_THREADS_PER_NODE 1
 static int kswapd_threads = DEF_KSWAPD_THREADS_PER_NODE;
 static bool kswapd_threads_cmdline;
 static int __init kswapd_per_node_setup(char *str)
@@ -212,8 +212,8 @@ __setup("kswapd_per_node=", kswapd_per_node_setup);
  *
  * More than 3 threads causes over-eviction with no scalability gain.
  *
- *   <= 8 GB: 2 threads -- tight memory, minimize reclaim CPU overhead
- *   >  8 GB: 3 threads -- larger LRU lists benefit from parallel scanning
+ *   <= 8 GB: DEF_KSWAPD_THREADS_PER_NODE (1 thread)  -- tight memory, minimize reclaim CPU overhead
+ *   >  8 GB: DEF_KSWAPD_THREADS_PER_NODE + 1 (2 threads) -- larger LRU lists benefit from parallel scanning
  *
  * The kswapd_per_node= cmdline param overrides this for testing.
  */
@@ -227,9 +227,7 @@ static void __init kswapd_threads_init(void)
 	total_ram_mb = memblock_phys_mem_size() >> 20;
 
 	if (total_ram_mb > 8000)
-		kswapd_threads = 3;
-	else
-		kswapd_threads = 2;
+		kswapd_threads = DEF_KSWAPD_THREADS_PER_NODE + 1;
 
 	pr_info("kswapd: %lu MB RAM, using %d threads per node\n",
 		total_ram_mb, kswapd_threads);
@@ -2516,6 +2514,10 @@ static int set_kswapd_cpu_affinity_as_config(void);
 // static int set_kswapd_cpu_affinity_as_boost(void);
 #endif
 
+static DEFINE_MUTEX(kswapd_threads_mutex);
+static int kswapd_per_node_run(int nid);
+static void kswapd_per_node_stop(int nid);
+
 #ifdef CONFIG_SYSFS
 static ssize_t mem_boost_mode_show(struct kobject *kobj,
 				    struct kobj_attribute *attr, char *buf)
@@ -2700,9 +2702,53 @@ static ssize_t am_app_launch_store(struct kobject *kobj,
 MEM_BOOST_ATTR(mem_boost_mode);
 MEM_BOOST_ATTR(am_app_launch);
 
+static ssize_t kswapd_threads_show(struct kobject *kobj,
+				   struct kobj_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%d\n", READ_ONCE(kswapd_threads));
+}
+
+static ssize_t kswapd_threads_store(struct kobject *kobj,
+				    struct kobj_attribute *attr,
+				    const char *buf, size_t count)
+{
+	int threads, nid, err;
+
+	err = kstrtoint(buf, 10, &threads);
+	if (err || threads < 1 || threads > MAX_KSWAPD_THREADS)
+		return -EINVAL;
+
+	mutex_lock(&kswapd_threads_mutex);
+
+	if (threads == kswapd_threads) {
+		mutex_unlock(&kswapd_threads_mutex);
+		return count;
+	}
+
+	/* Stop all currently running kswapd threads */
+	for_each_node_state(nid, N_MEMORY)
+		kswapd_per_node_stop(nid);
+
+	WRITE_ONCE(kswapd_threads, threads);
+
+	/* Restart with the new thread count */
+	for_each_node_state(nid, N_MEMORY)
+		kswapd_per_node_run(nid);
+
+	pr_info("kswapd: reconfigured to %d threads per node\n", kswapd_threads);
+
+	mutex_unlock(&kswapd_threads_mutex);
+
+	return count;
+}
+
+static struct kobj_attribute kswapd_threads_attr =
+	__ATTR(kswapd_threads, 0644, kswapd_threads_show, kswapd_threads_store);
+
 static struct attribute *vmscan_attrs[] = {
 	&mem_boost_mode_attr.attr,
 	&am_app_launch_attr.attr,
+	&kswapd_threads_attr.attr,
 	NULL,
 };
 
@@ -7193,7 +7239,7 @@ static void init_kswapd_cpumask(void)
 /* follow like kswapd_cpu_online(unsigned int cpu) */
 static int set_kswapd_cpu_affinity_as_config(void)
 {
-	int nid;
+	int nid, hid;
 
 	for_each_node_state(nid, N_MEMORY) {
 		pg_data_t *pgdat = NODE_DATA(nid);
@@ -7201,9 +7247,13 @@ static int set_kswapd_cpu_affinity_as_config(void)
 
 		mask = &kswapd_cpumask;
 
-		if (cpumask_any_and(cpu_online_mask, mask) < nr_cpu_ids)
+		if (cpumask_any_and(cpu_online_mask, mask) < nr_cpu_ids) {
 			/* One of our CPUs online: restore mask */
-			set_cpus_allowed_ptr(pgdat->kswapd, mask);
+			for (hid = 0; hid < MAX_KSWAPD_THREADS; hid++) {
+				if (pgdat->mkswapd[hid])
+					set_cpus_allowed_ptr(pgdat->mkswapd[hid], mask);
+			}
+		}
 	}
 	return 0;
 }
@@ -7211,7 +7261,7 @@ static int set_kswapd_cpu_affinity_as_config(void)
 #if 0
 static int set_kswapd_cpu_affinity_as_boost(void)
 {
-	int nid;
+	int nid, hid;
 
 	for_each_node_state(nid, N_MEMORY) {
 		pg_data_t *pgdat = NODE_DATA(nid);
@@ -7219,9 +7269,13 @@ static int set_kswapd_cpu_affinity_as_boost(void)
 
 		mask = &kswapd_cpumask_boost;
 
-		if (cpumask_any_and(cpu_online_mask, mask) < nr_cpu_ids)
+		if (cpumask_any_and(cpu_online_mask, mask) < nr_cpu_ids) {
 			/* One of our CPUs online: restore mask */
-			set_cpus_allowed_ptr(pgdat->kswapd, mask);
+			for (hid = 0; hid < MAX_KSWAPD_THREADS; hid++) {
+				if (pgdat->mkswapd[hid])
+					set_cpus_allowed_ptr(pgdat->mkswapd[hid], mask);
+			}
+		}
 	}
 	return 0;
 }
@@ -7327,8 +7381,15 @@ static int kswapd_per_node_run(int nid)
 	int ret = 0;
 
 	for (hid = 0; hid < kswapd_threads; ++hid) {
-		pgdat->mkswapd[hid] = kthread_run(kswapd, pgdat, "kswapd%d:%d",
+		if (pgdat->mkswapd[hid])
+			continue;
+
+		if (kswapd_threads == 1)
+			pgdat->mkswapd[hid] = kthread_run(kswapd, pgdat, "kswapd%d", nid);
+		else
+			pgdat->mkswapd[hid] = kthread_run(kswapd, pgdat, "kswapd%d:%d",
 								nid, hid);
+
 		if (IS_ERR(pgdat->mkswapd[hid])) {
 			/* failure at boot is fatal */
 			WARN_ON(system_state < SYSTEM_RUNNING);
@@ -7347,17 +7408,18 @@ static int kswapd_per_node_run(int nid)
 
 static void kswapd_per_node_stop(int nid)
 {
+	pg_data_t *pgdat = NODE_DATA(nid);
 	int hid = 0;
 	struct task_struct *kswapd;
 
-	for (hid = 0; hid < kswapd_threads; hid++) {
-		kswapd = NODE_DATA(nid)->mkswapd[hid];
+	for (hid = 0; hid < MAX_KSWAPD_THREADS; hid++) {
+		kswapd = pgdat->mkswapd[hid];
 		if (kswapd) {
 			kthread_stop(kswapd);
-			NODE_DATA(nid)->mkswapd[hid] = NULL;
+			pgdat->mkswapd[hid] = NULL;
 		}
 	}
-	NODE_DATA(nid)->kswapd = NULL;
+	pgdat->kswapd = NULL;
 }
 
 /*
@@ -7457,7 +7519,7 @@ unsigned long shrink_all_memory(unsigned long nr_to_reclaim)
    restore their cpu bindings. */
 static int kswapd_cpu_online(unsigned int cpu)
 {
-	int nid;
+	int nid, hid;
 
 	for_each_node_state(nid, N_MEMORY) {
 		pg_data_t *pgdat = NODE_DATA(nid);
@@ -7469,9 +7531,13 @@ static int kswapd_cpu_online(unsigned int cpu)
 		mask = cpumask_of_node(pgdat->node_id);
 #endif
 
-		if (cpumask_any_and(cpu_online_mask, mask) < nr_cpu_ids)
+		if (cpumask_any_and(cpu_online_mask, mask) < nr_cpu_ids) {
 			/* One of our CPUs online: restore mask */
-			set_cpus_allowed_ptr(pgdat->kswapd, mask);
+			for (hid = 0; hid < MAX_KSWAPD_THREADS; hid++) {
+				if (pgdat->mkswapd[hid])
+					set_cpus_allowed_ptr(pgdat->mkswapd[hid], mask);
+			}
+		}
 	}
 	return 0;
 }
@@ -7483,23 +7549,11 @@ static int kswapd_cpu_online(unsigned int cpu)
 int kswapd_run(int nid)
 {
 	pg_data_t *pgdat = NODE_DATA(nid);
-	int ret = 0;
 
 	if (pgdat->kswapd)
 		return 0;
 
-	if (kswapd_threads > 1)
-		return kswapd_per_node_run(nid);
-
-	pgdat->kswapd = kthread_run(kswapd, pgdat, "kswapd%d", nid);
-	if (IS_ERR(pgdat->kswapd)) {
-		/* failure at boot is fatal */
-		BUG_ON(system_state < SYSTEM_RUNNING);
-		pr_err("Failed to start kswapd on node %d\n", nid);
-		ret = PTR_ERR(pgdat->kswapd);
-		pgdat->kswapd = NULL;
-	}
-	return ret;
+	return kswapd_per_node_run(nid);
 }
 
 /*
@@ -7508,17 +7562,7 @@ int kswapd_run(int nid)
  */
 void kswapd_stop(int nid)
 {
-	struct task_struct *kswapd = NODE_DATA(nid)->kswapd;
-
-	if (kswapd_threads > 1) {
-		kswapd_per_node_stop(nid);
-		return;
-	}
-
-	if (kswapd) {
-		kthread_stop(kswapd);
-		NODE_DATA(nid)->kswapd = NULL;
-	}
+	kswapd_per_node_stop(nid);
 }
 
 static int __init kswapd_init(void)
