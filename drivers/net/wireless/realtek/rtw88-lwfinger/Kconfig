@@ -1,0 +1,115 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
+menuconfig RTW88
+	tristate "lwfinger's Realtek rtw88 backport support"
+	depends on MAC80211
+	help
+	  This enables the Realtek rtw88 wireless driver family.
+
+if RTW88
+
+config RTW88_CORE
+	tristate "lwfinger's rtw88 backport core"
+	select WANT_DEV_COREDUMP
+
+config RTW88_USB
+	tristate "Realtek rtw88 USB wireless network adapter"
+	depends on USB
+	select RTW88_CORE
+
+# Chip family support
+config RTW88_8703B
+	tristate "Realtek RTL8703B chip support"
+	depends on RTW88_CORE
+
+config RTW88_8723D
+	tristate "Realtek RTL8723D chip support"
+	depends on RTW88_CORE
+
+config RTW88_8723X
+	tristate "Realtek RTL8723x common chip support"
+	depends on RTW88_CORE
+
+config RTW88_8812A
+	tristate "Realtek RTL8812A chip support"
+	depends on RTW88_CORE
+
+config RTW88_8814A
+	tristate "Realtek RTL8814A chip support"
+	depends on RTW88_CORE
+
+config RTW88_8821A
+	tristate "Realtek RTL8821A chip support"
+	depends on RTW88_CORE
+
+config RTW88_8821C
+	tristate "Realtek RTL8821C chip support"
+	depends on RTW88_CORE
+
+config RTW88_8822B
+	tristate "Realtek RTL8822B chip support"
+	depends on RTW88_CORE
+
+config RTW88_8822C
+	tristate "Realtek RTL8822C chip support"
+	depends on RTW88_CORE
+
+config RTW88_88XXA
+	tristate "Realtek RTL88xxA legacy chip support"
+	depends on RTW88_CORE
+
+# USB attached device options
+config RTW88_8723DU
+	tristate "Realtek RTL8723DU USB wireless network adapter"
+	depends on RTW88_USB
+	select RTW88_8723D
+	select RTW88_8723X
+
+config RTW88_8812AU
+	tristate "Realtek RTL8812AU USB wireless network adapter"
+	depends on RTW88_USB
+	select RTW88_8812A
+
+config RTW88_8814AU
+	tristate "Realtek RTL8814AU USB wireless network adapter"
+	depends on RTW88_USB
+	select RTW88_8814A
+
+config RTW88_8821AU
+	tristate "Realtek RTL8821AU USB wireless network adapter"
+	depends on RTW88_USB
+	select RTW88_8821A
+
+config RTW88_8821CU
+	tristate "Realtek RTL8821CU USB wireless network adapter"
+	depends on RTW88_USB
+	select RTW88_8821C
+
+config RTW88_8822BU
+	tristate "Realtek RTL8822BU USB wireless network adapter"
+	depends on RTW88_USB
+	select RTW88_8822B
+
+config RTW88_8822CU
+	tristate "Realtek RTL8822CU USB wireless network adapter"
+	depends on RTW88_USB
+	select RTW88_8822C
+
+# Optional features
+config RTW88_LEDS
+	bool "Realtek rtw88 LED support"
+	depends on RTW88_CORE
+	depends on LEDS_CLASS
+	default y
+
+config RTW88_DEBUG
+	bool "Realtek rtw88 debug support"
+	depends on RTW88_CORE
+	default n
+
+config RTW88_DEBUGFS
+	bool "Realtek rtw88 debugfs support"
+	depends on RTW88_CORE && DEBUG_FS
+	default n
+
+endif
