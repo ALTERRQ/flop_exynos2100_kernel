@@ -517,7 +517,8 @@ static int rtw88xxau_init_queue_priority(struct rtw_dev *rtwdev)
 static void rtw88xxa_init_wmac_setting(struct rtw_dev *rtwdev)
 {
 	rtw_write16(rtwdev, REG_RXFLTMAP0, 0xffff);
-	rtw_write16(rtwdev, REG_RXFLTMAP1, 0x0400);
+	rtwdev->hal.rxfltmap1 = 0x0400;
+	rtw_write16(rtwdev, REG_RXFLTMAP1, rtwdev->hal.rxfltmap1);
 	rtw_write16(rtwdev, REG_RXFLTMAP2, 0xffff);
 
 	rtw_write32(rtwdev, REG_MAR, 0xffffffff);
@@ -1200,7 +1201,8 @@ int rtw88xxa_power_on(struct rtw_dev *rtwdev)
 	rtw_write32(rtwdev, REG_BAR_MODE_CTRL, 0x0201ffff);
 	rtw_write8(rtwdev, REG_NAV_CTRL + 2, 0);
 
-	rtw_write8_clr(rtwdev, REG_GPIO_MUXCFG, BIT(5));
+	if (rtw_hci_type(rtwdev) == RTW_HCI_TYPE_USB)
+		rtw_write8_clr(rtwdev, REG_GPIO_MUXCFG, BIT_BT_PTA_EN);
 
 	rtw_phy_init(rtwdev);
 
