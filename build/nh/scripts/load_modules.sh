@@ -81,6 +81,7 @@ if [ "$total" -eq 0 ]; then
 elif [ -z "$failed_names" ]; then
     description="$description
   STATUS: $loaded/$total module(s) loaded • All OK"
+else
     description="$description
   STATUS: $loaded/$total module(s) loaded • $failed failed: $failed_names"
 fi
