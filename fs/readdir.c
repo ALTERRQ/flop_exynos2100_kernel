@@ -40,10 +40,6 @@ extern bool susfs_is_inode_sus_path(struct inode *inode);
 	unsafe_copy_to_user(dst, src, len, label);		\
 } while (0)
 
-#ifdef CONFIG_NOMOUNT
-extern int nomount_handle_iterate_dir(struct file *file, struct dir_context *ctx);
-#endif
-
 int iterate_dir(struct file *file, struct dir_context *ctx)
 {
 	struct inode *inode = file_inode(file);
@@ -68,14 +64,10 @@ int iterate_dir(struct file *file, struct dir_context *ctx)
 	res = -ENOENT;
 	if (!IS_DEADDIR(inode)) {
 		ctx->pos = file->f_pos;
-#ifdef CONFIG_NOMOUNT
-		res = nomount_handle_iterate_dir(file, ctx);
-#else
 		if (shared)
 			res = file->f_op->iterate_shared(file, ctx);
 		else
 			res = file->f_op->iterate(file, ctx);
-#endif
 		file->f_pos = ctx->pos;
 		fsnotify_access(file);
 		file_accessed(file);
@@ -463,6 +455,7 @@ int ksys_getdents64(unsigned int fd, struct linux_dirent64 __user *dirent,
 	fdput_pos(f);
 	return error;
 }
+
 
 SYSCALL_DEFINE3(getdents64, unsigned int, fd,
 		struct linux_dirent64 __user *, dirent, unsigned int, count)
